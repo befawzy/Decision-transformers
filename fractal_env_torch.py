@@ -18,14 +18,14 @@ class Discrete(object):
         assert num_categories >= 0
         self.n = num_categories
         self.shape = ()
-        self.dtype = np.int32
+        self.dtype = torch.int32
 
     def sample(self, rng: torch.Generator('cpu')) -> torch.Tensor:
         """Sample random action uniformly from set of categorical choices."""
         return torch.randint(
             low=0, high=self.n, size=self.shape, generator=rng, dtype=self.dtype)
 
-    def contains(self, x: np.int_) -> bool:
+    def contains(self, x: torch.int) -> bool:
         """Check whether specific object is within space."""
         return True if (x < self.n and x >= 0) else False
 
@@ -48,13 +48,13 @@ class Box(object):
         self.shape = shape
         self.dtype = dtype
 
-    def sample(self, rng: torch.Generator(device='cpu')) -> torch.Tensor:
+    def sample(self) -> torch.Tensor:
         """Sample random action uniformly from 1D continuous range."""
         return (self.high - self.low) * torch.rand(size=self.shape, dtype=self.dtype) + self.low
 
-    def contains(self, x: torch.int_) -> bool:
+    def contains(self, x: torch.int) -> bool:
         """Check whether specific object is within space."""
-        return True if np.all(x >= self.low) and np.all(x <= self.high) else False
+        return True if torch.all(x >= self.low) and torch.all(x <= self.high) else False
 
 
 class FractalEnv(gym.Env):
@@ -107,7 +107,7 @@ class FractalEnv(gym.Env):
         # sample new state
         transition_matrices = params['p_transition']
         transition_probs = torch.as_tensor(transition_matrices[action, state])
-        state = np.random.choice(a=4, p=transition_probs.squeeze())
+        state = transition_probs.squeeze().multinomial(num_samples=1, replacement=True)
         if action == 0:
             obs = self.deterioration_process(state, obs, params)
         else:
@@ -121,7 +121,8 @@ class FractalEnv(gym.Env):
         """Environment-specific reset."""
         # sample initial state
         init_probs = params['init_probs']
-        state = np.random.choice(a=4, p=torch.as_tensor(init_probs))
+        state = torch.as_tensor(init_probs).multinomial(
+            num_samples=1, replacement=True)
         # sample initial obs
         obs = self.init_process(state, params)
         return obs, state
@@ -142,7 +143,7 @@ class FractalEnv(gym.Env):
 
     def observation_space(self) -> Box:
         """Observation space of the environment."""
-        return Box(-1e3, 0, shape=(1,), dtype=np.float32)
+        return Box(-1e3, 0, shape=(1,), dtype=torch.float32)
 
     def state_space(self) -> Discrete:
         """State space of the environment."""
@@ -173,5 +174,3 @@ class FractalEnv(gym.Env):
     def init_process(self, state, params):
         sample = self._init_process(state, params)
         return sample if sample < 0.0 else self.init_process(state, params)
-
-
