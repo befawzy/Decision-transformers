@@ -33,6 +33,7 @@ class DecisionTransformer(DecisionTransformerModel):
 
     def original_forward(self, *kwargs):
         state_preds, action_preds, return_preds = super().forward(**kwargs)
+        action_preds=torch.argmax(action_preds)
         return state_preds, action_preds, return_preds
 
     def get_action(self, states, actions, rewards, returns_to_go, timesteps, **kwargs):
