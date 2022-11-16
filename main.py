@@ -23,12 +23,13 @@ def main(arguments):
     num_of_trajectories = arguments['num_of_trajectories']
     #load env parameters for data generation
     env_path= 'env/mean_env_params.pickle'
-    generate_dataset(num_of_trajectories,env_path)
-    env_name = arguments['env']
-    #load generated data
-    dataset_path = f'data/{env_name}-dataset-{num_of_trajectories}.pkl'
-    with open(dataset_path, 'rb') as f:
-        trajectories = pickle.load(f)
+    #return data and input seed in the argument
+    trajectories= generate_dataset(num_of_trajectories,env_path)
+    # env_name = arguments['env']
+    # #load generated data
+    # dataset_path = f'data/{env_name}-dataset-{num_of_trajectories}.pkl'
+    # with open(dataset_path, 'rb') as f:
+    #     trajectories = pickle.load(f)
 
     collator = DecisionTransformerDataCollator(trajectories)
     config = DecisionTransformerConfig(state_dim=collator.state_dim, act_dim=collator.act_dim,
