@@ -51,12 +51,16 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
     data_ = pa.Table.from_pydict(data_)
     dataset = Dataset(data_)
 
-    for _ in range(50):
+    for _ in range(num_of_samples):
 
         obs, hidden_state = env.reset(env_params)
-        obs_list, state_list, action_list, dones_list, reward_list = [], [], [], [], []
+        obs_list = []
+        state_list = []
+        action_list = []
+        dones_list = []
+        reward_list = []
         for _ in range(50):
-            if torch.rand(1) < 0.3:
+            if torch.rand(1) < epsilon:
                 action = np.random.randint(3)
             else:
                 action = optimal_policy(hidden_state)
