@@ -20,7 +20,6 @@ class DecisionTransformer(DecisionTransformerModel):
 
     def forward(self, **kwargs):
         output = super().forward(**kwargs)
-        print(output[1])
         action_preds = output[1]
         action_targets = kwargs["actions"]
         #make sure to set the attention_mask variable to True in the model configuration

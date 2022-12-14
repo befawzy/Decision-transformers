@@ -24,15 +24,15 @@ from evaluate_rtg import load_model,evaluate
 # epsilon=variant['epsilon']
 env_path='env/mean_env_params.pickle'
 model_name='MDP'
-n_trajs=1000
-epsilon=0
-epochs=20
+n_trajs=5000
+epsilon=1
+epochs=100
 data=generate_dataset(n_trajs,'env/mean_env_params.pickle',epsilon)
 print('done with data generation')
 print(data)
-dataset_path = f'data/dataset-{n_trajs}-{epsilon}.pkl'
-with open(dataset_path, 'wb') as f:
-			pickle.dump(data, f)
+# dataset_path = f'data/dataset-{n_trajs}-{epsilon}.pkl'
+# with open(dataset_path, 'wb') as f:
+# 			pickle.dump(data, f)
 
 collator = DecisionTransformerDataCollator(data,model_name=model_name)
 # np.array(nn.functional.one_hot(
@@ -47,12 +47,15 @@ config = DecisionTransformerConfig(state_dim=collator.state_dim, act_dim=collato
                                        n_positions=1024,
                                        resid_pdrop=0.1,
                                        attn_pdrop=0.1
-                                       )                                       
+                                       )  
+load_path= 'C:/Users/Beshoy/Desktop/master thesis code/Decision_transformer/output/MDP/samples_20000/epsilon_0/epochs_20'
+DT=load_model(load_path)
+DT.train()                                                                            
 model = DecisionTransformer(config)
 model = model.to(device='cpu')
 output_dir=f'output/{model_name}/samples_{n_trajs}/epsilon_{epsilon}/epochs_{epochs}'
 training_args = TrainingArguments(
-    output_dir=output_dir,
+    output_dir=load_path,
     remove_unused_columns=False,
     num_train_epochs=epochs,
     per_device_train_batch_size=256,
@@ -62,8 +65,9 @@ training_args = TrainingArguments(
     optim="adamw_torch",
     max_grad_norm=0.25,
 )
+
 trainer = Trainer(
-        model=model,
+        model=DT,
         args=training_args,
         train_dataset=data,
         data_collator=collator,
@@ -95,25 +99,44 @@ trainer.train()
 # print('saving to: ')
 # print(output_dir)
 
-torch.save(model.state_dict(),output_dir+'/pt')
-config.save_pretrained(output_dir)
+torch.save(model.state_dict(),output_dir+'pt')
 
-DT=load_model(output_dir)
-untrained_model=DecisionTransformer(config)
+config.save_pretrained(output_dir)
+load_path= 'C:/Users/Beshoy/Desktop/master thesis code/Decision_transformer/output/MDP/samples_20000/epsilon_0/epochs_20'
+DT=load_model(load_path)
+# untrained_model=DecisionTransformer(config)
 # torch.argmax(actions.reshape(-1,3),dim=1,keepdim=True)
 DT.eval()
-targets= np.arange(-30000,-5000,1000)
+
+targets= np.arange(-80000,-3000,1000)
 actions=torch.zeros((targets.shape[0],50))
 states=torch.zeros((targets.shape[0],50))
 actual_return=torch.zeros(targets.shape[0])
 for i, target in enumerate(targets):
-    actions[i], states[i], actual_return[i]=evaluate(DT,target, env_path=env_path)
+    actions[i], states[i], actual_return[i]=evaluate(DT,target, env_path=env_path,seed=0)
+ret=[]
+seeds= np.arange(100)
+for i in range(100):
+    # env()
+    _, _, rew=evaluate(model=DT,target_return=-5000, env_path=env_path,seed= seeds[i])
+    ret.append(rew)
+plt.plot(np.arange(100),ret)
+plt.title('100 evaluations with a target return of -5000')
+
+plt.plot(np.arange(actual_return.shape[0]), actual_return, color='r', label='actual return')
+plt.plot(np.arange(actual_return.shape[0]), targets, color='b', label='desired return')
+plt.legend()
+plt.title('training on fully random generation^and then do fine tuning on optimal data')
+# plt.gca().invert_yaxis()
+
+
 # actions[0], states[0], actual_return[0]=evaluate(model,targets[-1], env_path=env_path)
 for i in range(actions.shape[0]):
     plt.figure()
     plt.plot(np.arange(50),actions[i], label= 'actions', color='r', alpha=0.5,marker = '.', markersize=10)
     plt.plot(np.arange(50),states[i], label= 'states', color='b', alpha=0.5,marker = '.', markersize=10)
     plt.legend()
+    plt.title(f'target_retrun={targets[i]} actual_return={actual_return[i]}')
 
 
 for i in range(actions.shape[0]):
@@ -123,13 +146,21 @@ for i in range(actions.shape[0]):
 
 
 plt.plot(np.arange(data.shape[0])[:20],np.sum(data['rewards'],axis=1)[:20], label= 'actions', color='r', alpha=0.5,marker = '.', markersize=10 )
-    
+
+with open(dataset_path, 'rb') as f:
+        data = pickle.load(f)    
+returns = [np.sum(data['rewards'][i]) for i in range(len(data['rewards']))]
+concat=data.to_pandas()
+concat['returns']=concat['rewards'].apply(np.sum)
+bins= np.linspace(np.min(concat['returns'])-1000, np.max(concat['returns'])+1000, 100)
+plt.hist(np.stack(concat['returns']), bins)
+
+
 
 # output=trainer.compute_loss(model=model,inputs=data)
 # if log_to_wandb:
 #     wandb.log(output)
-with open(dataset_path, 'rb') as f:
-        trajs = pickle.load(f)
+
     #evaluation
 # num_eval_episodes=arguments['num_eval_episodes']
 # target_rewards=arguments['target_reward']    

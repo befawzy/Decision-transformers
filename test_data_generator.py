@@ -22,7 +22,8 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
     with open(env_path, "rb") as fp:
         env_params = pickle.load(fp)
     # initialize reward matrix
-    env = FractalEnv()
+    seeds = np.random.SeedSequence()
+    seedSeq= seeds.generate_state(num_of_samples)
     # data generation
     data_ = {'observations': [],
              'actions': [],
@@ -32,9 +33,9 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
     if type(epsilon) is not list:
         epsilon=[epsilon]
     for eps in epsilon:
-
-        for _ in range(int(num_of_samples)):
-
+           
+        for j in range(int(num_of_samples)):
+            env = FractalEnv(seed=seedSeq[j])     
             obs, hidden_state = env.reset(env_params)
             obs_list = []
             state_list = []
@@ -64,7 +65,7 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
 
 # env_path='env/mean_env_params.pickle'
 # model_name='MDP'
-# n_trajs=500
+# n_trajs=1000
 # epsilon=0
 # data_0=generate_dataset(n_trajs,'env/mean_env_params.pickle',0)
 # data_0_1=generate_dataset(n_trajs,'env/mean_env_params.pickle',0.1)
@@ -72,6 +73,7 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
 # data_0_5=generate_dataset(n_trajs,'env/mean_env_params.pickle',0.5)
 # import pandas as pd
 # concat= pd.concat([data_0.to_pandas(), data_0_1.to_pandas(), data_0_3.to_pandas()])
+# concat=data_0.to_pandas()
 # concat['returns']=concat['rewards'].apply(np.sum)
 # import matplotlib.pyplot as plt 
 # bins= np.linspace(np.min(concat['returns'])-1000, np.max(concat['returns'])+1000, 100)
@@ -84,5 +86,7 @@ def generate_dataset(num_of_samples: int, env_path: str, epsilon: float, state_d
 # for j in range(20):
 #     plt.figure()
 #     plt.plot(np.arange(50),states[j])
+
+
 
 

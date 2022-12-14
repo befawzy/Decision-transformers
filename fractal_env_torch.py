@@ -60,7 +60,7 @@ class FractalEnv(gym.Env):
 
     def __init__(
         self,
-        seed=42
+        seed:int
     ) -> None:
         self.reward_matrix = self.rew_matrix()
         torch.manual_seed(seed)
@@ -116,6 +116,7 @@ class FractalEnv(gym.Env):
         """Environment-specific reset."""
         # sample initial state
         init_probs = params['init_probs']
+        #use a numpy ra
         state = torch.as_tensor(init_probs).multinomial(
             num_samples=1, replacement=True)
         # sample initial obs
@@ -189,4 +190,13 @@ class FractalEnv(gym.Env):
                 1.66*reward_a_A1 + reward_a_R2 + reward_s_2, 2*reward_a_A1 + reward_a_R2 + reward_s_3]
         ])
         return reward_matrix    
-
+import pickle
+import torch
+env_path='env/mean_env_params.pickle'
+with open(env_path, "rb") as fp:
+    params = pickle.load(fp)
+init_probs = params['init_probs']
+state=[]
+for i in  range(15):
+    state.append(torch.as_tensor(init_probs).multinomial(
+            num_samples=1, replacement=True))
