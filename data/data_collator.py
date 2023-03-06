@@ -6,7 +6,7 @@ class DecisionTransformerDataCollator:
     return_tensors: str = "pt"
     # subsets of the episode we use for training. This is the context length of the DT
     max_len: int = 20
-    state_dim: int = 1  # size of state space (default=1, for model type 'POMDP')
+    state_dim: int = 1  # size of state space
     act_dim: int = 3  # size of action space
     max_ep_len: int = 50  # max episode length in the dataset
     scale: float = 50  # normalization of rewards/returns
@@ -20,21 +20,25 @@ class DecisionTransformerDataCollator:
         self.model_name=model_name
         if self.model_name == 'POMDP':
             self.state_dim = 1
+            observations=dataset["observations"]
         elif self.model_name == 'MDP':
             self.state_dim = len(dataset[0]["states"][0])
+            observations=dataset["states"]
         else:
             raise ValueError
         self.dataset = dataset
         # calculate dataset stats for normalization of states
         states = []
         traj_lens = []
-        for obs in dataset["observations"]:
+        
+        for obs in observations:
             states.extend(obs)
             traj_lens.append(len(obs))
         self.n_traj = len(traj_lens)
         states = np.vstack(states)
-        self.state_mean, self.state_std = np.mean(
-            states, axis=0), np.std(states, axis=0) + 1e-6
+        if self.model_name == 'POMDP':
+            self.state_mean, self.state_std = np.mean(
+                states, axis=0), np.std(states, axis=0) + 1e-6
 
         traj_lens = np.array(traj_lens)
         self.p_sample = traj_lens / sum(traj_lens)
@@ -84,7 +88,7 @@ class DecisionTransformerDataCollator:
             timesteps[-1][timesteps[-1] >=
                           self.max_ep_len] = self.max_ep_len - 1  # padding cutoff
             rtg.append(
-                self._discount_cumsum(np.array(feature["rewards"][si:]), gamma=1.0)[
+                self._discount_cumsum(np.array(feature["rewards"][si:]), gamma=1)[
                     : s[-1].shape[1]   # TODO check the +1 removed here
                 ].reshape(1, -1, 1)
             )
@@ -97,7 +101,8 @@ class DecisionTransformerDataCollator:
             tlen = s[-1].shape[1]
             s[-1] = np.concatenate([np.zeros((1, self.max_len -
                                    tlen, self.state_dim)), s[-1]], axis=1)
-            s[-1] = (s[-1] - self.state_mean) / self.state_std
+            if self.model_name == 'POMDP':                       
+                s[-1] = (s[-1] - self.state_mean) / self.state_std
             a[-1] = np.concatenate(
                 [np.ones((1, self.max_len - tlen, self.act_dim))
                  * -10.0, a[-1]],

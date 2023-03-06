@@ -60,10 +60,9 @@ class FractalEnv(gym.Env):
 
     def __init__(
         self,
-        reward_matrix,
-        seed=42
+        seed:int
     ) -> None:
-        self.reward_matrix = reward_matrix
+        self.reward_matrix = self.rew_matrix()
         torch.manual_seed(seed)
 
     def step(
@@ -117,6 +116,7 @@ class FractalEnv(gym.Env):
         """Environment-specific reset."""
         # sample initial state
         init_probs = params['init_probs']
+        #use a numpy ra
         state = torch.as_tensor(init_probs).multinomial(
             num_samples=1, replacement=True)
         # sample initial obs
@@ -170,3 +170,23 @@ class FractalEnv(gym.Env):
     def init_process(self, state, params):
         sample = self._init_process(state, params)
         return sample if sample < 0.0 else self.init_process(state, params)
+
+    def rew_matrix(self) -> torch.tensor:
+
+        reward_a_0 = - 0
+        reward_a_R2 = - 50
+        reward_a_A1 = - 2000
+        reward_s_0 = - 100
+        reward_s_1 = - 200
+        reward_s_2 = - 1000
+        reward_s_3 = - 8000
+
+        reward_matrix = torch.as_tensor([
+            [reward_a_0 + reward_s_0, reward_a_0 + reward_s_1,
+                reward_a_0 + reward_s_2, reward_a_0 + reward_s_3],
+            [reward_a_R2 + reward_s_0, reward_a_R2 + reward_s_1,
+                reward_a_R2 + reward_s_2, reward_a_R2 + reward_s_3],
+            [1*reward_a_A1 + reward_a_R2 + reward_s_0, 1.33*reward_a_A1 + reward_a_R2 + reward_s_1,
+                1.66*reward_a_A1 + reward_a_R2 + reward_s_2, 2*reward_a_A1 + reward_a_R2 + reward_s_3]
+        ])
+        return reward_matrix    

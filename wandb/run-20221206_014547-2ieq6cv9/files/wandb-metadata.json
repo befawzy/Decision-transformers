@@ -1,0 +1,24 @@
+{
+    "os": "Windows-10-10.0.22000-SP0",
+    "python": "3.9.7",
+    "heartbeatAt": "2022-12-06T00:45:48.983890",
+    "startedAt": "2022-12-06T00:45:47.051177",
+    "docker": null,
+    "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "gpu_count": 1,
+    "cpu_count": 16,
+    "cuda": null,
+    "args": null,
+    "state": "running",
+    "program": "c:\\Users\\Beshoy\\Desktop\\master thesis code\\Decision_transformer\\test_main.py",
+    "codePath": "test_main.py",
+    "git": {
+        "remote": "https://github.com/befawzy/Decision-transformers.git",
+        "commit": "d841850f7edfc29436b511ce7fe5bd060a8a3470"
+    },
+    "email": "ge79liq@mytum.de",
+    "root": "C:/Users/Beshoy/Desktop/master thesis code/Decision_transformer",
+    "host": "LAPTOP-NHUPUQII",
+    "username": "Beshoy",
+    "executable": "c:\\Users\\Beshoy\\anaconda3\\python.exe"
+}

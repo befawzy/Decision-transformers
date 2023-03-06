@@ -1,171 +1,188 @@
 import numpy as np
 import torch
-import wandb
+# import wandbpip inn
 import argparse
 import pickle
 import time
-
+import torch
+from torch import nn
 from transformers import DecisionTransformerConfig, Trainer, TrainingArguments
+import matplotlib.pyplot as plt
+from model.decision_transformer import DecisionTransformer
+from transformers import DecisionTransformerModel
+from data.data_collator import DecisionTransformerDataCollator
+from data.data_generator import generate_dataset
+from evaluation.evaluate import load_model, evaluate
+from datetime import date
+from datasets import Dataset
+import pyarrow as pa
+import pandas as pd
+import seaborn as sns
+sns.set()
+sns.set_style("darkgrid")
 
-from decision_transformer.model.decision_transformer import DecisionTransformer
-from decision_transformer.data.data_collator import DecisionTransformerDataCollator
-from decision_transformer.data.data_generator import generate_dataset
 
-# this is the lr schedule used in the original paper. It might be changed later on
-warmup_steps = variant['warmup_steps']
+def evaluation(target_vals, num_evals, model, policy_target_val_ind, model_name, env_path):
+    returns_mean = []
+    returns_median = []
+    returns_std = []
+    seeds = np.random.SeedSequence()
+    ret_tens = torch.zeros((target_vals.shape[0], num_evals))
+    act_tens, state_tens = torch.zeros((num_evals, 50, target_vals.shape[0])), torch.zeros(
+        (num_evals, 51, target_vals.shape[0]))
+    for j in range(target_vals.shape[0]):
+        seedseq = seeds.generate_state(num_evals)
+        for i in range(num_evals):
+            model.eval()
+            act_, state_, ret_tens[j, i] = evaluate(
+                model, target_vals[j], model_name=model_name, env_path=env_path, seed=seedseq[i])
+            state_tens[i, :, j] = state_.argmax(dim=1)
+            act_tens[i, :, j] = act_.argmax(dim=1)
+        returns_mean.append(int(torch.mean(ret_tens[j, :])))
+        returns_median.append(torch.median(ret_tens[j, :]))
+        returns_std.append(int(torch.std(ret_tens[j, :])))
+    # plot the achieved return versus target return
+    sns.set()
+    sns.set_style("darkgrid")
+    plt.rcParams["font.size"] = "11"
+    plt.rcParams["text.usetex"] = True
+    plt.rcParams["font.family"] = "serif"
+    plt.rcParams['figure.dpi'] = 300
+    plt.rcParams['savefig.dpi'] = 300
+    plt.plot(target_vals, returns_mean, color='b',
+             label='mean achieved return', marker='.', markersize=5)
+    plt.plot(target_vals, target_vals, color='r',
+             label='desired return', marker='.', markersize=5)
+    plt.fill_between(target_vals, np.array(returns_mean) + np.array(returns_std),
+                     np.array(returns_mean) - np.array(returns_std), color='b', alpha=0.3)
+    plt.legend()
+    ax = plt.gca()
+    sns.move_legend(
+        ax, "lower center",
+        bbox_to_anchor=(0.5, 1), ncol=2, title=None, frameon=False)
+    print('mean achieved return for ')
+    print(returns_mean)
+    print('std of the achieved return')
+    print(returns_std)
+    # policy estimation
+    actions_tens = np.empty((4, 50))
+    actions_percent = np.empty((4, 50))
+
+    for t in range(50):
+        # get most chosen action per each state
+        for state in np.arange(4):
+            action_count = torch.bincount(torch.tensor(
+                act_tens[:, t, policy_target_val_ind][state_tens[:, t, policy_target_val_ind] == state], dtype=int))
+            action_choice = torch.argmax(action_count)
+            actions_tens[state, t] = action_choice.tolist()
+            actions_percent[state, t] = (torch.round(
+                action_count[action_choice]/torch.sum(action_count), decimals=2)).tolist()
+    for state in np.arange(4):
+        print(f'printing chosen actions for state {state}')
+        print(actions_tens[state, :])
+        print(f'printing frequency of the chosen actions for state {state}')
+        print(actions_percent[state, :]*100)
 
 
-def main(arguments):
-
-    device = arguments.get('device', 'cuda')
-    log_to_wandb = arguments.get('log_to_wandb', False)
-    # load dataset
-    num_of_trajectories = arguments['num_of_trajectories']
-    #load env parameters for data generation
-    env_path= 'env/mean_env_params.pickle'
-    #return data and input seed in the argument
-    trajectories= generate_dataset(num_of_trajectories,env_path)
-    # env_name = arguments['env']
-    # #load generated data
-    # dataset_path = f'data/{env_name}-dataset-{num_of_trajectories}.pkl'
-    # with open(dataset_path, 'rb') as f:
-    #     trajectories = pickle.load(f)
-
-    collator = DecisionTransformerDataCollator(trajectories)
+def experiment(variant):
+    device = variant['device']
+    epsilon = variant['epsilon']
+    model_name = variant['model_name']
+    env_path = variant['env_path']
+    K = variant['context_length']
+    n_trajs = variant['num_trajectories']
+    epochs = variant['epochs']
+    n_layers = variant['n_layers']
+    n_heads = variant['n_heads']
+    dataset_path = f'data/dataset-{n_trajs}-{epsilon}.pkl'
+    if not variant['load_data']:
+        data = generate_dataset(
+            variant['num_of_trajectories'], env_path, epsilon, max_ep_len=50)
+        with open(dataset_path, 'wb') as f:
+            pickle.dump(data, f)
+    else:
+        dataset_path = 'data/dataset-100000-0.pkl'
+        with open(dataset_path, 'rb') as f:
+            data = pickle.load(f)
+    eval_data = generate_dataset(10, env_path, epsilon, max_ep_len=50)
+    collator = DecisionTransformerDataCollator(data, model_name=model_name)
     config = DecisionTransformerConfig(state_dim=collator.state_dim, act_dim=collator.act_dim,
-                                       max_length=collator.max_len,
-                                       max_ep_len=arguments['max_ep_len'],
-                                       hidden_size=arguments['embed_dim'],
-                                       n_layer=arguments['n_layer'],
-                                       n_head=arguments['n_head'],
-                                       n_inner=4*arguments['embed_dim'],
-                                       activation_function=arguments['activation_function'],
+                                       max_length=K,
+                                       max_ep_len=50,
+                                       hidden_size=variant['embed_dim'],
+                                       n_layer=variant['embed_dim'],
+                                       n_head=variant['n_heads'],
+                                       n_inner=4*128,
                                        n_positions=1024,
-                                       resid_pdrop=arguments['dropout'],
-                                       attn_pdrop=arguments['dropout']
+                                       resid_pdrop=0.1,
+                                       attn_pdrop=0.1
                                        )
     model = DecisionTransformer(config)
-    model = model.to(device=device)
-    # optimizer = torch.optim.AdamW(
-    #        DecisionTransformer.parameters(),
-    #        lr=arguments['learning_rate'],
-    #        weight_decay=arguments['weight_decay'],
-    #    )
-
-    # lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-    #     optimizer,
-    #     lambda steps: min((steps+1)/warmup_steps, 1)
-    # )
+    output_dir = f'output/{model_name}/samples_{n_trajs}/epsilon_{epsilon}/epochs_{epochs}/max_len{K}/n_layer{n_layers}/n_heads{n_heads}'
     training_args = TrainingArguments(
-        output_dir="output/",
+        output_dir=output_dir,
         remove_unused_columns=False,
-        num_train_epochs=arguments['epochs'],
-        per_device_train_batch_size=arguments['batch_size'],
-        max_steps=arguments['max_iters'],
-        learning_rate=arguments['learning_rate'],
-        weight_decay=arguments['weight_decay'],
-        warmup_ratio=arguments['warmup_ratio'],
-        warmup_steps=arguments['warmup_steps'],
+        num_train_epochs=epochs,
+        per_device_train_batch_size=256,
+        per_device_eval_batch_size=256,
+        learning_rate=variant['learning_rate'],
+        weight_decay=variant['weight_decay'],
         lr_scheduler_type='linear',
         optim="adamw_torch",
         max_grad_norm=0.25,
-    )
+        evaluation_strategy='epoch',
+        logging_dir=output_dir+'/logs',
+        logging_strategy='epoch')
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=trajectories,
+        train_dataset=data,
+        eval_dataset=eval_data,
         data_collator=collator,
     )
     trainer.train()
-    #evaluation
-    num_eval_episodes=arguments['num_eval_episodes']
-    target_rewards=arguments['target_reward']
-    def eval_fn(target):
-        returns, lengths = [], []
-        def fn(model):
-            for _ in range(num_eval_episodes):
-                with torch.no_grad():
-                    ret, length = evaluate_episode_rtg(
-                                    state_dim=collator.state_dim,
-                                    state_dim=collator.action_dim,
-                                    model=model,
-                                    max_ep_len=arguments['max_ep_len'],
-                                    target_return=target,
-                                    state_mean=collator.state_mean,
-                                    state_std=collator.state_std,
-                                    device=device,
-                                )
-                returns.append(ret)
-                lengths.append(length)
-            return {
-                f'target_{target}_return_mean': np.mean(returns),
-                f'target_{target}_return_std': np.std(returns),
-                f'target_{target}_length_mean': np.mean(lengths),
-                f'target_{target}_length_std': np.std(lengths),
-            }
-        return fn
-    for target in (target_rewards): 
-        for _ in range(num_eval_episodes):
-            with torch.no_grad():
-                ret, length = evaluate_episode_rtg(
-                                state_dim=collator.state_dim,
-                                state_dim=collator.action_dim,
-                                model=model,
-                                max_ep_len=arguments['max_ep_len'],
-                                target_return=target,
-                                state_mean=collator.state_mean,
-                                state_std=collator.state_std,
-                                device=device,
-                            )
-        model.eval()
-        eval_fns=[eval_fn(target) for target in target_rewards]
-        logs = dict()
-        eval_start = time.time()
-        for eval_fn in eval_fns:
-            outputs = eval_fn(model)
-            for k, v in outputs.items():
-                logs[f'evaluation/{k}'] = v
+    if not variant['load_model']:
+        torch.save(model.state_dict(), output_dir+'/pt')
+        config.save_pretrained(output_dir)
+    target_vals = variant['target_vals']
+    if type(target_vals) is list:
+        target_vals = np.array(target_vals)
 
-        logs['time/evaluation'] = time.time() - eval_start
-        logs['training/train_loss_mean'] = np.mean(train_losses)
-        logs['training/train_loss_std'] = np.std(train_losses)
+    num_evals = variant['num_evals']
+    policy_target_val = variant['target_val_for_policy']
+    if not np.any(target_vals == policy_target_val):
+        raise ValueError
+    policy_target_val_ind = int(np.argwhere(target_vals == policy_target_val))
+    evaluation(target_vals=target_vals, num_evals=num_evals, model=model,
+               policy_target_val_ind=policy_target_val_ind, model_name=model_name, env_path=env_path)
 
-        for k in diagnostics:
-            logs[k] = diagnostics[k]
-
-        if print_logs:
-            print('=' * 80)
-            print(f'Iteration {iter_num}')
-            for k, v in logs.items():
-                print(f'{k}: {v}')
-
-        return logs                        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='fractal')
-    # medium, medium-replay, medium-expert, expert
+    parser.add_argument('--env_path', type=str,
+                        default='env/mean_env_params.pickle')
+
     parser.add_argument('--num_of_trajectories', type=int, default=10000)
     parser.add_argument('--K', type=int, default=20)
-    parser.add_argument('--pct_traj', type=float, default=1.)
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--n_layer', type=int, default=3)
+    parser.add_argument('--epsilon', type=float, default=0.3)
     parser.add_argument('--n_head', type=int, default=1)
     parser.add_argument('--max_ep_len', type=int, default=50)
-    parser.add_argument('--activation_function', type=str, default='softmax')
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_steps', type=int, default=10000)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
     parser.add_argument('--max_iters', type=int, default=10)
-    parser.add_argument('--target_reward', type=list, default=[10,20])
+    parser.add_argument('--target_vals', type=list, default=[10, 20])
     parser.add_argument('--num_steps_per_iter', type=int, default=10000)
     parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
+    parser.add_argument('--target_val_for_policy', type=str, default=-13500)
+    parser.add_argument('--load_data', type=str, default=False)
 
     args = parser.parse_args()
-
-    main(variant=vars(args))
+    parser.parse_args()
+    experiment(variant=vars(args))
