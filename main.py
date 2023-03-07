@@ -1,25 +1,15 @@
 import numpy as np
 import torch
-# import wandbpip inn
 import argparse
 import pickle
-import time
 import torch
-from torch import nn
 from transformers import DecisionTransformerConfig, Trainer, TrainingArguments
 import matplotlib.pyplot as plt
 from model.decision_transformer import DecisionTransformer
-from transformers import DecisionTransformerModel
 from data.data_collator import DecisionTransformerDataCollator
 from data.data_generator import generate_dataset
 from evaluation.evaluate import load_model, evaluate
-from datetime import date
-from datasets import Dataset
-import pyarrow as pa
-import pandas as pd
 import seaborn as sns
-sns.set()
-sns.set_style("darkgrid")
 
 
 def evaluation(target_vals, num_evals, model, policy_target_val_ind, model_name, env_path):
@@ -90,20 +80,17 @@ def experiment(variant):
     model_name = variant['model_name']
     env_path = variant['env_path']
     K = variant['context_length']
-    n_trajs = variant['num_trajectories']
+    n_trajs = variant['num_of_trajectories']
     epochs = variant['epochs']
     n_layers = variant['n_layers']
     n_heads = variant['n_heads']
     dataset_path = f'data/dataset-{n_trajs}-{epsilon}.pkl'
-    if not variant['load_data']:
-        data = generate_dataset(
-            variant['num_of_trajectories'], env_path, epsilon, max_ep_len=50)
+    data = generate_dataset(
+        n_trajs, env_path, epsilon, max_ep_len=50)
+    if variant['load_data']:
         with open(dataset_path, 'wb') as f:
             pickle.dump(data, f)
-    else:
-        dataset_path = 'data/dataset-100000-0.pkl'
-        with open(dataset_path, 'rb') as f:
-            data = pickle.load(f)
+
     eval_data = generate_dataset(10, env_path, epsilon, max_ep_len=50)
     collator = DecisionTransformerDataCollator(data, model_name=model_name)
     config = DecisionTransformerConfig(state_dim=collator.state_dim, act_dim=collator.act_dim,
@@ -114,8 +101,8 @@ def experiment(variant):
                                        n_head=variant['n_heads'],
                                        n_inner=4*128,
                                        n_positions=1024,
-                                       resid_pdrop=0.1,
-                                       attn_pdrop=0.1
+                                       resid_pdrop=variant['dropout'],
+                                       attn_pdrop=variant['dropout']
                                        )
     model = DecisionTransformer(config)
     output_dir = f'output/{model_name}/samples_{n_trajs}/epsilon_{epsilon}/epochs_{epochs}/max_len{K}/n_layer{n_layers}/n_heads{n_heads}'
@@ -162,26 +149,25 @@ if __name__ == '__main__':
     parser.add_argument('--env_path', type=str,
                         default='env/mean_env_params.pickle')
 
-    parser.add_argument('--num_of_trajectories', type=int, default=10000)
-    parser.add_argument('--K', type=int, default=20)
+    parser.add_argument('--num_of_trajectories', type=int, default=50)
+    parser.add_argument('--context_length', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--embed_dim', type=int, default=128)
-    parser.add_argument('--n_layer', type=int, default=3)
+    parser.add_argument('--n_layers', type=int, default=3)
     parser.add_argument('--epsilon', type=float, default=0.3)
-    parser.add_argument('--n_head', type=int, default=1)
+    parser.add_argument('--n_heads', type=int, default=1)
     parser.add_argument('--max_ep_len', type=int, default=50)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
-    parser.add_argument('--warmup_steps', type=int, default=10000)
-    parser.add_argument('--num_eval_episodes', type=int, default=100)
-    parser.add_argument('--max_iters', type=int, default=10)
-    parser.add_argument('--target_vals', type=list, default=[10, 20])
-    parser.add_argument('--num_steps_per_iter', type=int, default=10000)
+    parser.add_argument('--num_evals', type=int, default=100)
+    parser.add_argument('--target_vals', type=list, default=[-20000, -13500])
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--target_val_for_policy', type=str, default=-13500)
-    parser.add_argument('--load_data', type=str, default=False)
+    parser.add_argument('--load_data', type=str, default=True)
+    parser.add_argument('--model_name', type=str, default='MDP')
+    parser.add_argument('--load_model', type=str, default=False)
 
     args = parser.parse_args()
     parser.parse_args()
