@@ -1,9 +1,9 @@
 import torch
 import pickle
 from torch import nn
-from fractal_env_torch import FractalEnv
+from env.fractal_env_torch import FractalEnv
 from transformers import DecisionTransformerConfig
-from decision_transformer import DecisionTransformer
+from model.decision_transformer import DecisionTransformer
 
 
 # load a trained model
